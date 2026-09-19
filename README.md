@@ -57,18 +57,26 @@ over running Playwright per-tool.
 - Binds to `127.0.0.1` only, no auth -- a deliberate 2026-09-18 decision.
   **If this ever needs to be reachable from another machine, add real auth
   before changing the bind address, not after.**
-- Every fetch is logged to `~/sync/local-first/http-retriever.log` (JSONL) --
-  not yet the shared `processing_log.duckdb`/`fetch_log` table other
-  local-first tools write to. Wiring that in needs verifying DuckDB's
-  behavior when a second-language process writes the same file; deferred
-  as a fast-follow rather than assumed safe.
-- No persistent LaunchAgent yet. Per the artist-agent launchd/Metal
-  investigation's methodology: verify with `launchctl kickstart -k` before
-  trusting `RunAtLoad` for this, even though a pure network/CPU service
-  (no GPU work) likely isn't subject to that specific failure mode.
-- [[47-process-doctor]] doesn't care what language a watched process is
-  written in -- wiring this service into it once it has a LaunchAgent is a
-  small addition, not new design.
+- Runs as `com.localfirst.http-retriever-service`, `RunAtLoad`+`KeepAlive`.
+  Chromium is launched with `--disable-gpu` specifically because it now runs
+  under launchd -- verified via `launchctl kickstart -k` (both on initial
+  load and after a forced restart) that the Playwright fallback path
+  completes normally (~1s) rather than hanging, the failure class the
+  artist-agent investigation found for GPU-touching launchd children.
+- Every fetch is logged to `~/sync/local-first/http-retriever.log` (JSONL),
+  then imported into the shared `fetch_log` table in `processing_log.duckdb`
+  every 15 minutes by `scripts/import_fetch_log.py`
+  (`com.localfirst.http-retriever-log-importer`), rather than writing there
+  directly from Node. Confirmed empirically that DuckDB rejects a second
+  process's connection while one is open (a live two-process test threw
+  "Could not set lock on file"), and Python tools already do brief
+  connect/write/close cycles against that file throughout the day -- a
+  second-language writer risked silently dropped rows under real traffic.
+  Importing after the fact through the same already-safe Python write path
+  avoids that risk entirely. Idempotent (tracks the last imported line).
+- Watched automatically by [[47-process-doctor]] -- it doesn't care what
+  language a watched process is written in, so no extra wiring was needed
+  once the LaunchAgent existed under the `com.localfirst.*` naming convention.
 
 ## Testing
 
