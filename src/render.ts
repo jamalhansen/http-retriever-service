@@ -9,7 +9,14 @@ let sharedBrowser: Browser | null = null;
  */
 async function getBrowser(): Promise<Browser> {
   if (!sharedBrowser || !sharedBrowser.isConnected()) {
-    sharedBrowser = await chromium.launch({ headless: true });
+    // --disable-gpu: headless Chromium's default ("new headless") mode still
+    // touches GPU compositing paths unless told not to. The artist-agent
+    // launchd/Metal investigation this week found launchd-spawned GPU work
+    // hangs indefinitely with near-zero CPU, root cause unconfirmed but
+    // reproducible on demand. This service will run under launchd once its
+    // LaunchAgent exists, so avoiding GPU compositing here isn't optional --
+    // it's the same category of risk that cost a week to diagnose once.
+    sharedBrowser = await chromium.launch({ headless: true, args: ["--disable-gpu"] });
   }
   return sharedBrowser;
 }
