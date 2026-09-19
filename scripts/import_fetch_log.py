@@ -73,6 +73,11 @@ def parse_entry(line: str) -> dict | None:
     return entry
 
 
+def _resolve_tool_id(conn, name: str) -> int:
+    conn.execute(_UPSERT_TOOL, [name])
+    return conn.execute(_SELECT_TOOL_ID, [name]).fetchone()[0]
+
+
 def import_lines(lines: list[str], db_path: Path) -> int:
     entries = [parsed for line in lines if (parsed := parse_entry(line))]
     if not entries:
@@ -80,18 +85,25 @@ def import_lines(lines: list[str], db_path: Path) -> int:
 
     conn = duckdb.connect(str(db_path))
     try:
-        conn.execute(_UPSERT_TOOL, [TOOL_NAME])
-        tool_id = conn.execute(_SELECT_TOOL_ID, [TOOL_NAME]).fetchone()[0]
+        # Cache tool_id per name within this run -- most batches are one
+        # caller, but a manual curl test (toolName absent) or a mix of
+        # callers should still attribute correctly rather than collapsing
+        # onto this service's own name.
+        tool_ids: dict[str, int] = {}
         for entry in entries:
+            tool_name = entry.get("toolName") or TOOL_NAME
+            if tool_name not in tool_ids:
+                tool_ids[tool_name] = _resolve_tool_id(conn, tool_name)
+
             domain = urlparse(entry["url"]).netloc
             conn.execute(
                 _INSERT_FETCH,
                 [
-                    tool_id,
+                    tool_ids[tool_name],
                     entry["url"],
                     domain,
-                    None,
-                    None,
+                    entry.get("sourceUrl"),
+                    entry.get("sourcePlatform"),
                     entry["method"] != "error",
                     entry.get("httpStatus"),
                     entry.get("errorMessage"),

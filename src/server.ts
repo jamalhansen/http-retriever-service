@@ -1,18 +1,20 @@
 import express, { type Request, type Response } from "express";
+import { verifyToken } from "./auth.js";
 import { BlockedDomainError, retrieve, RetrievalError } from "./retrieve.js";
 import { closeBrowser } from "./render.js";
 
 const PORT = Number(process.env.HTTP_RETRIEVER_PORT ?? 8787);
 // Localhost-only by design (2026-09-18 decision) -- no auth in v1 because
 // nothing outside this machine can reach it. Revisit auth before ever
-// changing this bind address.
+// changing this bind address. Auth (verifyToken) is optional insurance on
+// top of that, not a substitute for it -- see auth.ts.
 const HOST = "127.0.0.1";
 
 const app = express();
 app.use(express.json());
 
-app.post("/fetch", async (req: Request, res: Response) => {
-  const { url } = req.body ?? {};
+app.post("/fetch", verifyToken, async (req: Request, res: Response) => {
+  const { url, toolName, sourceUrl, sourcePlatform } = req.body ?? {};
   if (typeof url !== "string" || !url) {
     res.status(400).json({ error: "body must include a non-empty string 'url'" });
     return;
@@ -31,7 +33,7 @@ app.post("/fetch", async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await retrieve(url);
+    const result = await retrieve(url, { toolName, sourceUrl, sourcePlatform });
     res.json(result);
   } catch (err) {
     if (err instanceof BlockedDomainError) {

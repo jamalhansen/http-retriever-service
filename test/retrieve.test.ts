@@ -67,4 +67,22 @@ describe("retrieve", () => {
       expect.objectContaining({ url: "https://example.com/post", method: "http" })
     );
   });
+
+  it("passes attribution through to the log entry", async () => {
+    vi.mocked(fetchPlain).mockResolvedValue({ html: REAL_HTML, httpStatus: 200, errorMessage: null });
+
+    await retrieve("https://example.com/post", {
+      toolName: "content-discovery-agent",
+      sourceUrl: "https://bsky.app/some-post",
+      sourcePlatform: "bluesky",
+    });
+
+    expect(logFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: "content-discovery-agent",
+        sourceUrl: "https://bsky.app/some-post",
+        sourcePlatform: "bluesky",
+      })
+    );
+  });
 });
