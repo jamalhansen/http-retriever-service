@@ -3,3 +3,13 @@ dist/
 .DS_Store
 *.log
 CLAUDE.md
+
+# Fleet-standard patterns (this is a TS repo; most don't apply here but
+# make check-standards requires them uniformly across all repos)
+.coverage
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+.env
+.envrc
