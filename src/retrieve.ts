@@ -1,5 +1,5 @@
 import { DEFAULT_BLOCKED_DOMAINS, isBlocked } from "./blocklist.js";
-import { extractArticle, isThin, type ExtractedArticle } from "./extract.js";
+import { assessQuality, extractArticle, isThin, type ExtractedArticle, type ExtractionQuality } from "./extract.js";
 import { fetchPlain } from "./fetcher.js";
 import { fetchRendered } from "./render.js";
 import { logFetch } from "./log.js";
@@ -8,6 +8,7 @@ export interface RetrieveResult extends ExtractedArticle {
   url: string;
   fetchMethod: "http" | "playwright";
   httpStatus: number | null;
+  quality: ExtractionQuality;
 }
 
 export interface Attribution {
@@ -56,15 +57,18 @@ export async function retrieve(url: string, attribution: Attribution = {}): Prom
   if (plain.html) {
     const article = extractArticle(plain.html, url);
     if (!isThin(article)) {
+      const quality = assessQuality(article);
       await logFetch({
         url,
         method: "http",
         httpStatus: plain.httpStatus,
         durationMs: Date.now() - started,
         errorMessage: null,
+        contentLength: article.content.length,
+        quality,
         ...attribution,
       });
-      return { ...article, url, fetchMethod: "http", httpStatus: plain.httpStatus };
+      return { ...article, url, fetchMethod: "http", httpStatus: plain.httpStatus, quality };
     }
   }
 
@@ -81,14 +85,21 @@ export async function retrieve(url: string, attribution: Attribution = {}): Prom
     throw new RetrievalError(rendered.errorMessage ?? plain.errorMessage ?? "fetch failed with no error detail");
   }
 
+  // The render is the last attempt available -- still return it even if it's
+  // also thin/empty (a genuine login wall, e.g. a private Google Doc or an
+  // X.com page requiring auth, isn't something a browser alone fixes), but
+  // the quality field tells the caller not to trust it as a real article.
   const renderedArticle = extractArticle(rendered.html, url);
+  const quality = assessQuality(renderedArticle);
   await logFetch({
     url,
     method: "playwright",
     httpStatus: plain.httpStatus,
     durationMs: Date.now() - started,
     errorMessage: null,
+    contentLength: renderedArticle.content.length,
+    quality,
     ...attribution,
   });
-  return { ...renderedArticle, url, fetchMethod: "playwright", httpStatus: plain.httpStatus };
+  return { ...renderedArticle, url, fetchMethod: "playwright", httpStatus: plain.httpStatus, quality };
 }

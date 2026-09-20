@@ -22,6 +22,10 @@ export interface FetchLogEntry {
   sourceUrl?: string | null;
   /** e.g. 'bluesky', 'mastodon', 'rss' -- mirrors local_first_common.tracking's source_platform. */
   sourcePlatform?: string | null;
+  /** Extracted body length in characters -- null for blocked/error, where no extraction happened. */
+  contentLength?: number | null;
+  /** assessQuality()'s verdict on the best attempt -- null for blocked/error. */
+  quality?: "ok" | "thin" | "empty" | null;
 }
 
 export async function logFetch(entry: FetchLogEntry): Promise<void> {

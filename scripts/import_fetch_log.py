@@ -45,8 +45,9 @@ _SELECT_TOOL_ID = "SELECT id FROM tools WHERE name = ?;"
 _INSERT_FETCH = """
 INSERT INTO fetch_log
     (tool_id, url, domain, source_url, source_platform,
-     success, http_status, error_message, duration_ms, title)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+     success, http_status, error_message, duration_ms, title,
+     method, content_length, quality)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
 
 
@@ -85,6 +86,15 @@ def import_lines(lines: list[str], db_path: Path) -> int:
 
     conn = duckdb.connect(str(db_path))
     try:
+        # Deliberately not depending on local_first_common here (see this
+        # script's PEP 723 header -- duckdb only) even though it owns
+        # fetch_log's real schema; mirrors its migration for the columns
+        # this script itself needs to write, same as _INSERT_FETCH above
+        # already duplicates the table's column list.
+        conn.execute("ALTER TABLE fetch_log ADD COLUMN IF NOT EXISTS method VARCHAR;")
+        conn.execute("ALTER TABLE fetch_log ADD COLUMN IF NOT EXISTS content_length INTEGER;")
+        conn.execute("ALTER TABLE fetch_log ADD COLUMN IF NOT EXISTS quality VARCHAR;")
+
         # Cache tool_id per name within this run -- most batches are one
         # caller, but a manual curl test (toolName absent) or a mix of
         # callers should still attribute correctly rather than collapsing
@@ -109,6 +119,9 @@ def import_lines(lines: list[str], db_path: Path) -> int:
                     entry.get("errorMessage"),
                     entry.get("durationMs"),
                     None,
+                    entry.get("method"),
+                    entry.get("contentLength"),
+                    entry.get("quality"),
                 ],
             )
     finally:

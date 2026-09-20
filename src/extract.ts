@@ -59,9 +59,44 @@ export function extractArticle(html: string, url: string): ExtractedArticle {
   return { ...meta, content };
 }
 
-/** True when neither a meta-tag title nor any real body content was recovered -- the render-fallback trigger. */
+// Genuinely nothing usable -- a captcha/login/JS-required wall, not a short
+// article. Below this even a real title doesn't make the extraction worth
+// anything.
+const EMPTY_CONTENT_CHARS = 50;
+
+// Matches content-discovery-agent's own THIN_BODY_CHARS bar so both sides
+// agree on what "thin" means, rather than silently disagreeing about the
+// number that decides whether an item is worth a second, more expensive
+// attempt. Below this is more likely navigation chrome than article prose.
+export const THIN_CONTENT_CHARS = 1_200;
+
+export type ExtractionQuality = "ok" | "thin" | "empty";
+
+/**
+ * The render-fallback trigger: true whenever there isn't enough real content
+ * yet, regardless of title. Found live 2026-09-20: the old check required
+ * `!article.title` too, and LessWrong, Alignment Forum, and X all serve a
+ * real <title> tag even when the article body needs JS to render -- that
+ * condition let exactly those pages through as "good enough" at 49-288
+ * characters of nav chrome, and the render this service has available never
+ * ran for them.
+ */
 export function isThin(article: ExtractedArticle): boolean {
-  return !article.title && article.content.length < 40;
+  return article.content.length < THIN_CONTENT_CHARS;
+}
+
+/**
+ * Quality tier of the best extraction attempt (plain fetch or, if that was
+ * thin, the rendered retry) -- what a caller checks to decide whether to
+ * keep, flag, or discard a result. "empty" means essentially nothing was
+ * recovered even after a real browser render (a genuine dead end, not just
+ * a short article); "thin" means real but likely-incomplete content --
+ * still usable, just flagged; "ok" means a normal article body.
+ */
+export function assessQuality(article: ExtractedArticle): ExtractionQuality {
+  if (article.content.length < EMPTY_CONTENT_CHARS) return "empty";
+  if (article.content.length < THIN_CONTENT_CHARS) return "thin";
+  return "ok";
 }
 
 export { EMPTY as EMPTY_ARTICLE };

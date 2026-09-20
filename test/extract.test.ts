@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractArticle, isThin } from "../src/extract.js";
+import { assessQuality, extractArticle, isThin } from "../src/extract.js";
 
 const REAL_ARTICLE_HTML = `
 <html>
@@ -58,12 +58,34 @@ describe("isThin", () => {
     expect(isThin({ title: "", description: "", content: "short", author: "", publishedDate: "" })).toBe(true);
   });
 
-  it("is false when a title is present even with little content", () => {
-    expect(isThin({ title: "A Title", description: "", content: "", author: "", publishedDate: "" })).toBe(false);
+  it("is true when a title is present but content is short -- the render-fallback trigger", () => {
+    // Regression 2026-09-20: the old check exempted any page with a title,
+    // which is exactly the failure shape LessWrong/Alignment Forum/X hit --
+    // a real <title> meta tag with a body that needs JS to render. This is
+    // the render fallback's whole reason to exist, so a title alone must
+    // never skip it.
+    expect(isThin({ title: "A Title", description: "", content: "short nav chrome only", author: "", publishedDate: "" })).toBe(true);
   });
 
-  it("is false when content is long even without a title", () => {
-    const content = "word ".repeat(50);
+  it("is false when content is long, with or without a title", () => {
+    const content = "word ".repeat(300); // 1500 chars, comfortably past the 1200-char bar
     expect(isThin({ title: "", description: "", content, author: "", publishedDate: "" })).toBe(false);
+    expect(isThin({ title: "A Title", description: "", content, author: "", publishedDate: "" })).toBe(false);
+  });
+});
+
+describe("assessQuality", () => {
+  it("is 'empty' for essentially nothing, even with a title", () => {
+    expect(assessQuality({ title: "A Title", description: "", content: "short", author: "", publishedDate: "" })).toBe("empty");
+  });
+
+  it("is 'thin' for real but short content -- still usable, just flagged", () => {
+    const content = "word ".repeat(40); // 200 chars: past "empty", short of the 1200-char "ok" bar
+    expect(assessQuality({ title: "", description: "", content, author: "", publishedDate: "" })).toBe("thin");
+  });
+
+  it("is 'ok' for a normal article body", () => {
+    const content = "word ".repeat(300); // 1500 chars
+    expect(assessQuality({ title: "", description: "", content, author: "", publishedDate: "" })).toBe("ok");
   });
 });

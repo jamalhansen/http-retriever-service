@@ -9,8 +9,13 @@ import { fetchRendered } from "../src/render.js";
 import { logFetch } from "../src/log.js";
 import { BlockedDomainError, retrieve, RetrievalError } from "../src/retrieve.js";
 
+// 100 repeats of "real content word " (18 chars) = 1800 chars, comfortably
+// past the 1200-char thin bar -- a genuinely "not thin" fixture.
 const REAL_HTML = `<html><head><meta property="og:title" content="Real Title" /></head>
-<body><article><p>${"real content word ".repeat(20)}</p></article></body></html>`;
+<body><article><p>${"real content word ".repeat(100)}</p></article></body></html>`;
+
+const TITLE_ONLY_HTML = `<html><head><meta property="og:title" content="A Real Title" /></head>
+<body><div id="app"></div></body></html>`;
 
 describe("retrieve", () => {
   beforeEach(() => {
@@ -29,7 +34,32 @@ describe("retrieve", () => {
 
     expect(result.fetchMethod).toBe("http");
     expect(result.title).toBe("Real Title");
+    expect(result.quality).toBe("ok");
     expect(fetchRendered).not.toHaveBeenCalled();
+  });
+
+  it("falls back to render even when a real title is present but the body is thin", async () => {
+    // Regression 2026-09-20: this exact shape (real <title>, near-empty
+    // body) used to skip the render fallback entirely -- LessWrong,
+    // Alignment Forum, and X all serve a real title tag even when the
+    // article body needs JS to render.
+    vi.mocked(fetchPlain).mockResolvedValue({ html: TITLE_ONLY_HTML, httpStatus: 200, errorMessage: null });
+    vi.mocked(fetchRendered).mockResolvedValue({ html: REAL_HTML, errorMessage: null });
+
+    const result = await retrieve("https://example.com/title-only");
+
+    expect(fetchRendered).toHaveBeenCalled();
+    expect(result.fetchMethod).toBe("playwright");
+  });
+
+  it("returns quality 'empty' when even the render comes back with nothing -- a genuine dead end", async () => {
+    vi.mocked(fetchPlain).mockResolvedValue({ html: TITLE_ONLY_HTML, httpStatus: 200, errorMessage: null });
+    vi.mocked(fetchRendered).mockResolvedValue({ html: TITLE_ONLY_HTML, errorMessage: null });
+
+    const result = await retrieve("https://example.com/login-wall");
+
+    expect(result.fetchMethod).toBe("playwright");
+    expect(result.quality).toBe("empty");
   });
 
   it("falls back to Playwright render when the plain fetch is thin", async () => {
@@ -58,13 +88,18 @@ describe("retrieve", () => {
     await expect(retrieve("https://example.com/dead")).rejects.toThrow(RetrievalError);
   });
 
-  it("logs every real attempt", async () => {
+  it("logs every real attempt, including content length and quality", async () => {
     vi.mocked(fetchPlain).mockResolvedValue({ html: REAL_HTML, httpStatus: 200, errorMessage: null });
 
     await retrieve("https://example.com/post");
 
     expect(logFetch).toHaveBeenCalledWith(
-      expect.objectContaining({ url: "https://example.com/post", method: "http" })
+      expect.objectContaining({
+        url: "https://example.com/post",
+        method: "http",
+        quality: "ok",
+        contentLength: expect.any(Number),
+      })
     );
   });
 
