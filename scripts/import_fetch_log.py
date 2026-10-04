@@ -79,12 +79,29 @@ def _resolve_tool_id(conn, name: str) -> int:
     return conn.execute(_SELECT_TOOL_ID, [name]).fetchone()[0]
 
 
+def _connect_with_retry(db_path: Path, delays=(0.05, 0.1, 0.2, 0.4, 0.8, 1.6)):
+    """DuckDB allows one writing process per file, and processing_log.duckdb has
+    several (gateway, artist-agent, process-doctor). Wait briefly for the lock
+    instead of exiting 1, which this job did before 2026-10-04. Same backoff as
+    local_first_common.tracking._connect_with_retry. Lines are never lost either
+    way: state is saved only after a successful import, so a failed run retries."""
+    import time
+
+    for delay in (*delays, None):
+        try:
+            return duckdb.connect(str(db_path))
+        except duckdb.IOException as exc:
+            if delay is None or "lock" not in str(exc).lower():
+                raise
+            time.sleep(delay)
+
+
 def import_lines(lines: list[str], db_path: Path) -> int:
     entries = [parsed for line in lines if (parsed := parse_entry(line))]
     if not entries:
         return 0
 
-    conn = duckdb.connect(str(db_path))
+    conn = _connect_with_retry(db_path)
     try:
         # Deliberately not depending on local_first_common here (see this
         # script's PEP 723 header -- duckdb only) even though it owns
