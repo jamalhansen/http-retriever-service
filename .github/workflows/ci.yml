@@ -1,0 +1,56 @@
+# CI for the fleet's one Node service (added 2026-10-04). Same shape as the Python
+# repos' shared python-ci.yml: every check runs even after an earlier failure,
+# failures surface as annotations, and a weekly run catches new advisories.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 9 * * 1"   # weekly: new advisories appear without any commit
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # full history for the secrets scan
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install (from package-lock.json, exactly)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        if: success() || failure()
+        run: npm run typecheck
+
+      - name: Tests
+        if: success() || failure()
+        run: npx vitest run --reporter=default --reporter=github-actions
+
+      - name: Known vulnerabilities (npm audit)
+        if: success() || failure()
+        run: npm audit
+
+      - name: Secrets in git history (gitleaks)
+        if: success() || failure()
+        run: |
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git . --no-banner --redact
