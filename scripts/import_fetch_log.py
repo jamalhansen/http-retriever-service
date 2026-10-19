@@ -26,6 +26,7 @@ Usage:
     python3 import_fetch_log.py
     python3 import_fetch_log.py --log-path /path/to/http-retriever.log
 """
+
 import argparse
 import json
 import os
@@ -36,9 +37,17 @@ import duckdb
 
 TOOL_NAME = "http-retriever-service"
 
-DEFAULT_LOG_PATH = Path(os.environ.get("HTTP_RETRIEVER_LOG_PATH", "~/sync/local-first/http-retriever.log")).expanduser()
-DEFAULT_STATE_PATH = Path("~/sync/local-first/http-retriever-import-state.json").expanduser()
-DEFAULT_DB_PATH = Path(os.environ.get("LOCAL_FIRST_TRACKING_DB", "~/sync/local-first/processing_log.duckdb")).expanduser()
+DEFAULT_LOG_PATH = Path(
+    os.environ.get("HTTP_RETRIEVER_LOG_PATH", "~/sync/local-first/http-retriever.log")
+).expanduser()
+DEFAULT_STATE_PATH = Path(
+    "~/sync/local-first/http-retriever-import-state.json"
+).expanduser()
+DEFAULT_DB_PATH = Path(
+    os.environ.get(
+        "LOCAL_FIRST_TRACKING_DB", "~/sync/local-first/processing_log.duckdb"
+    )
+).expanduser()
 
 _UPSERT_TOOL = "INSERT INTO tools (name) VALUES (?) ON CONFLICT (name) DO NOTHING;"
 _SELECT_TOOL_ID = "SELECT id FROM tools WHERE name = ?;"
@@ -109,7 +118,9 @@ def import_lines(lines: list[str], db_path: Path) -> int:
         # this script itself needs to write, same as _INSERT_FETCH above
         # already duplicates the table's column list.
         conn.execute("ALTER TABLE fetch_log ADD COLUMN IF NOT EXISTS method VARCHAR;")
-        conn.execute("ALTER TABLE fetch_log ADD COLUMN IF NOT EXISTS content_length INTEGER;")
+        conn.execute(
+            "ALTER TABLE fetch_log ADD COLUMN IF NOT EXISTS content_length INTEGER;"
+        )
         conn.execute("ALTER TABLE fetch_log ADD COLUMN IF NOT EXISTS quality VARCHAR;")
 
         # Cache tool_id per name within this run -- most batches are one
