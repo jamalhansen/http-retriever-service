@@ -44,9 +44,11 @@ jobs:
         if: success() || failure()
         run: npx vitest run --reporter=default --reporter=github-actions
 
-      - name: Known vulnerabilities (npm audit)
+      # Only what the service runs on fails CI. Test-only packages (vitest and its tree) get
+      # new advisories every few days; Dependabot opens those bumps as PRs instead.
+      - name: Known vulnerabilities (npm audit, runtime deps)
         if: success() || failure()
-        run: npm audit
+        run: npm audit --omit=dev
 
       - name: Secrets in git history (gitleaks)
         if: success() || failure()
