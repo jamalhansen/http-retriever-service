@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessQuality, extractArticle, isThin } from "../src/extract.js";
+import { assessQuality, blockText, extractArticle, isThin } from "../src/extract.js";
 
 const REAL_ARTICLE_HTML = `
 <html>
@@ -87,5 +87,25 @@ describe("assessQuality", () => {
   it("is 'ok' for a normal article body", () => {
     const content = "word ".repeat(300); // 1500 chars
     expect(assessQuality({ title: "", description: "", content, author: "", publishedDate: "" })).toBe("ok");
+  });
+});
+
+describe("blockText", () => {
+  it("keeps one paragraph per block element instead of one long line", () => {
+    const text = blockText("<div><h2>Heading</h2><p>First   paragraph\n wraps.</p><p>Second <em>one</em>.</p><ul><li>a</li><li>b</li></ul></div>");
+    expect(text).toBe("Heading\n\nFirst paragraph wraps.\n\nSecond one.\n\na\n\nb");
+  });
+
+  it("turns <br> into a line break", () => {
+    expect(blockText("<p>line one<br>line two</p>")).toBe("line one\nline two");
+  });
+});
+
+describe("extractArticle paragraphs", () => {
+  it("returns body content with paragraph breaks", () => {
+    const para = (n: number) => `<p>Paragraph ${n} ${"of a real article with enough words to read as prose ".repeat(4)}</p>`;
+    const html = `<html><head><title>T</title></head><body><article>${[1, 2, 3, 4].map(para).join("")}</article></body></html>`;
+    const result = extractArticle(html, "https://example.com/a");
+    expect(result.content.split("\n\n").length).toBeGreaterThanOrEqual(4);
   });
 });
