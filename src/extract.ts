@@ -30,6 +30,50 @@ function extractMetaOnly(doc: Document): Pick<ExtractedArticle, "title" | "descr
   return { title, description, author, publishedDate };
 }
 
+// Block elements that end a paragraph or line in the rendered article.
+const BLOCK_TAGS = new Set([
+  "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "DD", "DIV", "DL", "DT", "FIGCAPTION", "FIGURE", "FOOTER",
+  "H1", "H2", "H3", "H4", "H5", "H6", "HEADER", "HR", "LI", "MAIN", "OL", "P", "PRE", "SECTION", "TABLE",
+  "TR", "UL",
+]);
+
+/**
+ * Readability's cleaned HTML as plain text, one paragraph per block element.
+ *
+ * Readability's own `textContent` drops every block boundary, so a whole
+ * article arrived as one line (found 2026-10-22: most Readwise-tagged
+ * captures since late September were a single 2-14k-character line, which
+ * broke line-number citations in the vault pipeline downstream).
+ */
+export function blockText(html: string): string {
+  const doc = new JSDOM(`<body>${html}</body>`).window.document;
+  const parts: string[] = [];
+  const walk = (node: Node): void => {
+    if (node.nodeType === 3) {
+      parts.push((node.textContent ?? "").replace(/\s+/g, " "));
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const tag = (node as Element).tagName;
+    if (tag === "BR") {
+      parts.push("\n");
+      return;
+    }
+    const block = BLOCK_TAGS.has(tag);
+    if (block) parts.push("\n\n");
+    node.childNodes.forEach(walk);
+    if (block) parts.push("\n\n");
+  };
+  walk(doc.body);
+  return parts
+    .join("")
+    .split("\n")
+    .map((line) => line.replace(/ {2,}/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /**
  * Full extraction: real Mozilla Readability for main-content cleanup (the
  * actual Firefox Reader View algorithm -- the whole reason this service is
@@ -44,7 +88,7 @@ export function extractArticle(html: string, url: string): ExtractedArticle {
   try {
     const reader = new Readability(dom.window.document as unknown as Document);
     const parsed = reader.parse();
-    content = parsed?.textContent?.trim() ?? "";
+    content = parsed?.content ? blockText(parsed.content) : "";
     if (!meta.title && parsed?.title) {
       meta.title = parsed.title;
     }
